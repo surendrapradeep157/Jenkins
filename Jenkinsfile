@@ -1,16 +1,12 @@
 pipeline {
 
-    agent {
-        docker {
-            image 'docker:28-cli'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
 
     environment {
-        IMAGE_NAME = "python-web-app"
-        CONTAINER_NAME = "python-web-app"
-        PORT = "5000"
+        IMAGE_NAME = "python-flask-app"
+        CONTAINER_NAME = "python-flask-app"
+        HOST_PORT = "5000"
+        CONTAINER_PORT = "5000"
     }
 
     stages {
@@ -21,22 +17,16 @@ pipeline {
             }
         }
 
-        stage('Docker Version') {
-            steps {
-                sh 'docker version'
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
-                sh """
+                sh '''
                 docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .
                 docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest
-                """
+                '''
             }
         }
 
-        stage('Remove Old Container') {
+        stage('Stop Old Container') {
             steps {
                 sh '''
                 docker rm -f ${CONTAINER_NAME} || true
@@ -44,22 +34,23 @@ pipeline {
             }
         }
 
-        stage('Run Container') {
+        stage('Run New Container') {
             steps {
-                sh """
+                sh '''
                 docker run -d \
                   --name ${CONTAINER_NAME} \
-                  -p ${PORT}:5000 \
+                  -p ${HOST_PORT}:${CONTAINER_PORT} \
+                  --restart unless-stopped \
                   ${IMAGE_NAME}:latest
-                """
+                '''
             }
         }
 
         stage('Health Check') {
             steps {
                 sh '''
-                sleep 5
-                curl http://host.docker.internal:5000 || curl http://localhost:5000
+                sleep 10
+                curl http://localhost:${HOST_PORT}/health
                 '''
             }
         }
@@ -72,6 +63,10 @@ pipeline {
 
         failure {
             echo "Deployment Failed!"
+        }
+
+        always {
+            sh 'docker ps -a'
         }
     }
 }
